@@ -112,8 +112,8 @@ def test_budget_caps_the_fetch_and_leaves_it_incomplete(ledger, monkeypatch):
     assert im.is_complete_username_baseline(result, 100) is False
 
 
-# Instaloader's NodeIterator fetches its first page while it is being constructed, so names reach this process
-# before anything can count or cap them. A plain generator produces one name per next() and hides that entirely
+# NodeIterator fetches its first page on construction, before anything can count or cap the names.
+# A plain generator would hide that
 class EagerPageSource:
     # Takes the pages the endpoint would serve and fetches the first one immediately, as the real iterator does
     def __init__(self, pages):
@@ -146,8 +146,8 @@ def test_the_budget_caps_what_a_page_source_returns(ledger, monkeypatch):
     assert im.exposure_snapshot()["identities"] == 10
 
 
-# Instagram served a whole page before the budget could stop it, so the ledger is short of the real exposure by the
-# rest of that page. The REST source has no such gap: it caps the page size it asks for and records the page it got
+# Instagram serves a whole page before the budget can stop it, so the ledger runs short by the rest of that page.
+# The REST source caps the page size it asks for instead
 def test_a_page_source_serves_more_than_the_ledger_records(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
     source = EagerPageSource([[f"p1-{index}" for index in range(50)], [f"p2-{index}" for index in range(50)]])
@@ -644,7 +644,7 @@ def test_clear_breaker_recovers_a_corrupt_ledger(ledger, tmp_path):
     assert im.exposure_snapshot()["identities"] == 0
 
 
-# A corrupt file found by --clear-breaker itself is still reported as the state that was removed, never as nothing to clear
+# A corrupt file found by --clear-breaker is reported as the state that was removed, not as nothing to clear
 def test_clear_breaker_names_a_corrupt_ledger_it_replaced(ledger, tmp_path, monkeypatch, capsys):
     (tmp_path / "instagram_monitor_exposure.json").write_text("{ not json", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -721,8 +721,7 @@ def _backend_line() -> str:
 
 
 class TestEveryAuthenticatedFailureReachesTheBreaker:
-    # The flag check is the entry point every monitoring path already used, so recording has to happen there
-    # rather than only inside the follow list fetch, which is the one place that called the classifier
+    # Recording happens at the flag check every monitoring path uses, not only inside the follow list fetch
     def test_an_expired_session_outside_the_list_fetch_arms_the_breaker(self, ledger, monkeypatch):
         monkeypatch.setattr(im, "profile_from_username_resilient", _raises("LoginRequiredException: login_required"), raising=False)
 
@@ -739,8 +738,15 @@ class TestEveryAuthenticatedFailureReachesTheBreaker:
         assert im.note_authenticated_failure("LoginRequiredException: login_required", "target", object()) is False
         assert im.circuit_breaker_tripped() is False
 
-    # A challenge is reported as a flag, and left to the flagged session handler to record, so one challenge
-    # arriving on one request is not counted twice in the ledger
+    # A graphql/query refusal counts as an API change and leaves the account running
+    def test_the_refused_graphql_endpoint_leaves_the_breaker_armed(self, ledger):
+        message = 'AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/graphql/query'
+
+        assert im.note_authenticated_failure(message, "target", object()) is False
+        assert im.circuit_breaker_tripped() is False
+        assert im.exposure_snapshot()["failures"] == {"endpoint_retired": 1}
+
+    # A challenge is reported as a flag and recorded by the flagged session handler, so it is counted once
     def test_a_challenge_is_reported_as_flagged_and_recorded_once(self, ledger):
         assert im.note_authenticated_failure("400 Bad Request - checkpoint_required", "target", object()) is True
         assert im.exposure_snapshot()["failures"] == {}
@@ -778,8 +784,7 @@ class TestEveryAuthenticatedFailureReachesTheBreaker:
         assert im.is_account_level_failure(im.classify_failure_class(trigger)) is True
 
 
-# A ledger edited by hand or left half written by a full disk holds values no reader can trust. Every one of
-# them has to stop the account rather than grant it budget, and none may escape as an error the caller does not expect
+# A hand-edited or half-written ledger holds untrustworthy values. Each must stop the account, not grant budget
 class TestAStoredLedgerValueNoReaderCanTrust:
     # Writes one hand-edited ledger payload for the test account and returns nothing
     @staticmethod
@@ -877,12 +882,7 @@ class TestAStoredLedgerValueNoReaderCanTrust:
 
 
 class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
-    """--clear-breaker and --exposure exit before the command line's session account has been applied.
-
-    Both read the safety record of whatever the configuration named, or of the anonymous key when no
-    configuration was loaded, so a run told the user nothing was tripped while the named account stayed
-    stopped. The ledger itself was always correct, and so was every helper it went through.
-    """
+    """--clear-breaker and --exposure act on the account named on the command line, not the configured one."""
 
     # Trips the breaker for one account, then runs one one-shot command through the real command line
     @staticmethod
@@ -967,8 +967,7 @@ def test_iterator_construction_failure_is_recorded_once(ledger):
     assert im.exposure_snapshot()["failures"] == {"rate_limit": 1}
 
 
-# A scan that cannot finish would spend the whole remaining budget on a list that is discarded as
-# incomplete, and would repeat that every day, so the reported count has to gate whether it starts
+# A scan that cannot finish would spend the remaining budget on a discarded list, so the count gates its start
 def test_a_scan_that_cannot_finish_is_never_started(ledger, monkeypatch, capsys):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 100, raising=False)
 
@@ -1180,8 +1179,7 @@ class TestExposureBudgetRow:
 
 
 class TestExposureCrossProcessLock:
-    # Two monitors sharing an output directory each read the same daily total and write back a count that lost the
-    # other's identities, so a budget meant to cap the day is silently doubled
+    # Two monitors sharing an output directory must not overwrite each other's counts
     def test_two_processes_do_not_lose_each_others_identities(self, tmp_path):
         import subprocess
         import sys

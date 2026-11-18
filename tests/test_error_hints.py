@@ -13,7 +13,7 @@ import pytest
 
 KNOWN_ERRORS = [
     ("ConnectionException: 429 Too Many Requests", "rate-limiting"),
-    ("RuntimeError: Public embed fallback failed for target: HTTP 401", "public embed instead"),
+    ("RuntimeError: Public embed fallback failed for target: HTTP 401", "public embed and profile page instead"),
     ("JSONDecodeError: challenge_required", "challenge"),
     ("Instagram ... requires a challenge ... missing expected data", "challenge"),
     ("ConnectionException: Login required, redirected", "invalid or expired"),
@@ -235,6 +235,7 @@ class TestErrorSummary:
         ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting anonymous requests from this IP"),
         ("JSONDecodeError: challenge_required", "Instagram is asking this session or IP to pass a challenge"),
         ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "Instagram no longer answers the profile endpoint this lookup used"),
+        ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/graphql/query', "Instagram no longer answers the GraphQL endpoint this request used"),
         ("FileNotFoundError: Instagram session file for me not found", "No saved Instagram session was found"),
         ("ConnectionException: Login required, redirected", "The saved Instagram session is invalid or expired"),
         ("ProfileNotExistsException: Profile xyz does not exist", "Instagram could not find the requested profile"),
@@ -265,7 +266,7 @@ class TestErrorSummary:
 
 
 class TestTemporaryLimitAdvice:
-    # Instagram's "Try Again Later" notice clears with time alone, so the advice must not send the reader to clear a checkpoint or re-import
+    # "Try Again Later" clears with time alone, so the advice must not mention a checkpoint or a re-import
     def test_a_temporary_limit_is_told_to_wait_rather_than_re_import(self, im_module):
         advice = im_module.classify_recovery_error('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', is_logged_in=True)
 
@@ -412,8 +413,7 @@ class TestOutageReporting:
 
         assert outcomes.count("reminder") == 1
 
-    # The reminder keeps its own clock when the liveness banner is switched off, so a lasting failure is neither
-    # silenced nor repeated every check
+    # The reminder keeps its own clock when the liveness banner is off
     def test_the_outage_reporter_reminds_on_its_own_clock_without_a_liveness_banner(self, im_module, monkeypatch):
         clock = [1000000.0]
         monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
@@ -448,7 +448,7 @@ class TestOutageReporting:
         assert set(outcomes) == {""}
         assert reporter.recovered() == 900
 
-    # A reported outage that starts failing differently is still one outage, so the change is one line, not a second report
+    # A reported outage that starts failing differently is still one outage, so the change is one line
     def test_a_changed_retryable_category_is_noted_in_one_line(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
         reporter = im_module.OutageReporter()
@@ -511,8 +511,7 @@ class TestOutageReporting:
         assert lines[1].startswith("Liveness check, timestamp:")
 
 
-# The three loop failure paths each report their own way, so a check that only reads the source cannot tell whether
-# they still meet at the outage reporter. These run the pass instead
+# The three loop failure paths must still meet at the outage reporter, which only running the pass can show
 class TestTheLoopFailurePaths:
     # Runs one monitoring pass, letting the startup fetch succeed and failing the given number of loop checks
     @staticmethod
@@ -565,8 +564,7 @@ class TestTheLoopFailurePaths:
         monkeypatch.setattr(im_module, "profile_from_username_resilient", profile)
         monkeypatch.setattr(im_module, "latest_post_mobile", posts)
 
-        # Reports the stop the harness asked for rather than always interrupting, so more than one check can run.
-        # The wait also advances the clock, which is what makes a timed reminder deterministic here
+        # Reports the stop the harness asked for, so several checks can run. The wait also advances the clock
         def wait(seconds, event=None):
             clock[0] += seconds
             return stop_event.is_set()
@@ -619,8 +617,7 @@ class TestTheLoopFailurePaths:
 
         assert recoveries == ["target"]
 
-    # The banner speaks for a check that said nothing, so a check that reported the end of an outage restarts
-    # the quiet clock instead of being contradicted by the line under it
+    # A check that reported the end of an outage restarts the quiet clock of the liveness banner
     def test_a_check_that_reported_a_recovery_does_not_claim_it_was_quiet(self, im_module, monkeypatch, capsys):
         self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), checks=3, recovers=True, liveness_seconds=2)
 
@@ -704,12 +701,12 @@ class TestRecoveryCodeSet:
         ]
         produced = {im_module.classify_recovery_error(failure, context=context).code for failure, context in failures}
         produced.add(im_module.missing_dependency_advice("rich", "The Terminal Dashboard cannot start", "pip install rich").code)
-        # The doctor builds a few rows outside the classifier, such as the TLS and missing-target rows, so their codes count as reachable too
+        # The doctor builds a few rows outside the classifier, such as the TLS row, so their codes count too
         produced.update(node.args[0].value for node in ast.walk(ast.parse(inspect.getsource(im_module))) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "make_recovery_advice" and node.args and isinstance(node.args[0], ast.Constant))
 
         assert im_module.RECOVERY_CODES - produced == set()
 
-    # Every branch of the rule table names the page that covers it, so no failure leaves the user without somewhere to read
+    # Every branch of the rule table names the page that covers it
     def test_every_failure_names_a_page(self, im_module):
         guideless = [ast.unparse(row.elts[0]) for row in _rule_table_rows(im_module) if not _names_a_page(row.elts[3])]
         guideless += [ast.unparse(call.args[0]) for call in _context_advice_calls(im_module) if not _names_a_page(call.args[4])]
@@ -721,7 +718,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 17, "the runtime rule table lost or gained a row"
+        assert len(rows) == 18, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)
@@ -876,8 +873,7 @@ class TestLocalResourceLimits:
 
 
 class TestTheRecoveryPrinterContracts:
-    # One concept carried three names across this family, and this tool held the family name over the other
-    # contract: render_recovery_error(exc, ...) raised AttributeError here while it classified in five siblings
+    # The recovery printers share one contract across the family. render_recovery_error(exc, ...) once raised here
     def test_the_recovery_printers_share_one_contract(self, im_module):
         advice_first = ("advice", "debug", "retry_note", "with_fix", "label")
         error_first = ("error", "context", "debug", "detail", "retry_note", "with_fix", "label")

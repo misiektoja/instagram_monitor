@@ -39,8 +39,7 @@ def protect_setup_globals(im_module, monkeypatch):
         monkeypatch.setattr(im_module, name, getattr(im_module, name), raising=False)
 
 
-# Answers each mail server prompt with a value that prompt accepts, so a section under test reaches its end instead
-# of looping on an answer the wizard rejects
+# Answers each mail server prompt with a value that prompt accepts
 def mail_answer(question, default="", required=False):
     lowered = question.lower()
     if "url" in lowered:
@@ -58,8 +57,7 @@ def make_setup_state(im_module, directory: Path):
     return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, None, False, False, False, False)
 
 
-# Setup writes the switch its question named, so a question promising more than its switch delivers is the drift
-# this catches. A followings change is a status event and no follower switch gates it
+# Setup writes the switch its question named. A followings change is a status event no follower switch gates
 class TestTheFollowQuestionsNameTheSwitchTheyWrite:
     # Runs one real notification section through its custom preset and returns the question asked per switch
     @staticmethod
@@ -270,8 +268,7 @@ class TestEditableReview:
             assert namespace["TARGET_USERNAMES"] == []
             output = capsys.readouterr().out
             assert "second.target" in output
-            # No secret was entered, so nothing was written to the dotenv, no printed command names it and the
-            # saved config does not name it either
+            # No secret was entered, so no dotenv was written and neither a printed command nor the config names one
             assert not env_path.exists()
             assert namespace["DOTENV_FILE"] == ""
             assert "--env-file" not in output
@@ -303,8 +300,7 @@ class TestTheConfigNamesTheDotenvOnlyWhenItExists:
         exec(config_path.read_text(encoding="utf-8"), namespace)
         return namespace, env_path
 
-    # A setup that writes no secret writes no dotenv, so naming one would open every later run with a warning about
-    # a file this setup decided not to create
+    # A setup that writes no secret writes no dotenv and names none
     def test_a_setup_without_secrets_names_no_dotenv(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             namespace, env_path = self._save_without_secrets(im_module, monkeypatch, Path(directory_name))
@@ -313,8 +309,7 @@ class TestTheConfigNamesTheDotenvOnlyWhenItExists:
             assert namespace["DOTENV_FILE"] == ""
             assert im_module.DOTENV_FILE == ""
 
-    # The next run reads the config setup saved, and a warning about a file setup chose not to create is what it must
-    # not open with. The same run against a config naming a missing file is the control that the warning still works
+    # The next run must not warn about a dotenv setup did not create. A config naming a missing file is the control
     def test_the_saved_config_opens_the_next_run_without_a_warning(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
@@ -392,8 +387,7 @@ class TestBrowserOnboarding:
             assert state.import_browser == "firefox"
             assert state.container_host == "macos"
 
-    # Derived from the mount table rather than restating it, so a host added there is covered here without editing
-    # this test and cannot be offered under another host's key
+    # Derived from the mount table, so a host added there is covered without editing this test
     @pytest.mark.parametrize("choice", range(len(im.CONTAINER_FIREFOX_HOSTS)))
     def test_container_firefox_host_selection(self, im_module, monkeypatch, choice):
         captured = []
@@ -408,15 +402,13 @@ class TestBrowserOnboarding:
         assert im_module._wizard_select_container_firefox_host() == host
         assert captured[choice] == (im_module.CONTAINER_FIREFOX_HOSTS[host][0], im_module.CONTAINER_FIREFOX_HOST_HINTS[host]), "the menu offered text neither table holds for that host"
 
-    # The "Another system" entry sits after every host in the table, so its index is read from the table rather than
-    # written as a literal that stops meaning "the last entry" as soon as a host is added
+    # "Another system" sits after every host in the table, so its index is read from the table
     def test_unsupported_container_firefox_host_is_not_assumed(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: len(im_module.CONTAINER_FIREFOX_HOSTS))
         assert im_module._wizard_select_container_firefox_host() is None
         assert "not currently available for this host" in capsys.readouterr().out
 
-    # Verifies every host in the mount table carries the wizard prose the menu needs, since a host present in one
-    # and missing from the other would raise while the menu is being drawn
+    # Verifies every host in the mount table has the wizard prose the menu needs
     def test_every_mounted_host_has_a_menu_hint(self, im_module):
         assert list(im_module.CONTAINER_FIREFOX_HOST_HINTS) == list(im_module.CONTAINER_FIREFOX_HOSTS)
 
@@ -1298,7 +1290,7 @@ class TestMailServerSignIn:
             assert state.secret_updates["SMTP_PASSWORD"] == "right-password"
             assert state.want_email is True
 
-    # Verifies giving up on a refused sign-in switches every email alert off rather than saving settings that cannot work
+    # Verifies giving up on a refused sign-in switches every email alert off
     def test_an_abandoned_sign_in_switches_email_off(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
@@ -1312,7 +1304,7 @@ class TestMailServerSignIn:
             assert state.want_email is False
             assert all(state.config_values[name] is False for name in im_module.WIZARD_EMAIL_NOTIFICATION_KEYS)
 
-    # Verifies an unreachable mail server keeps the answers, since being offline is the usual reason a correct setup fails here
+    # Verifies an unreachable mail server keeps the answers, since being offline is the usual cause
     def test_an_unreachable_mail_server_keeps_the_answers(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
@@ -1360,10 +1352,9 @@ class TestMailServerSignIn:
         assert im_module.SMTP_HOST == "old.example.test"
 
 
-# Setup reports the sign-in succeeded and then writes the files a restart reads. A check that proves one password
-# while a different one is what gets read leaves the user with a setup that was announced as working and is not
+# The sign-in check must prove the password the next run reads, not a different one
 class TestTheCheckedSecretIsTheOneTheNextRunUses:
-    # Runs one complete email section over a dotenv file that already holds a password and returns what was signed in with
+    # Runs one email section over a dotenv file that already holds a password and returns what was signed in with
     @staticmethod
     def _run(im_module, monkeypatch, directory, typed, replace_saved, exported=None):
         env_path = Path(directory) / ".env"
@@ -1566,8 +1557,8 @@ def test_smtp_sign_in_uses_the_configured_mail_server(im_module, monkeypatch):
     assert im_module.SMTP_PASSWORD == "saved"
 
 
-# A rejection reply that quotes the credentials back is the normal shape for several providers, so every surface
-# that prints one has to be checked with a password no global holds while the failure is being rendered
+# Several providers quote the credentials back in a rejection, so every surface that prints one is checked with
+# a password no global holds
 class TestAProviderErrorThatEchoesThePassword:
     SECRET = "hunter2-private-value"
 
@@ -1642,8 +1633,7 @@ class TestAProviderErrorThatEchoesThePassword:
         assert "[private value]" in rendered
         assert "The SMTP server rejected the sign-in" in rendered
 
-    # The sign-in used to publish the candidate as SMTP_PASSWORD and restore it before the caller rendered the
-    # failure, which left the caller redacting a value that was no longer there
+    # The sign-in must not publish the candidate as SMTP_PASSWORD, or the caller redacts a value already restored
     def test_the_sign_in_never_publishes_the_password_it_is_checking(self, im_module, monkeypatch):
         seen = []
         self._install(im_module, monkeypatch, saved_password="saved-private-value")
@@ -2266,7 +2256,7 @@ class TestBrowserImportRetry:
         assert len(menus) == 1
         assert "--import-browser-session" in capsys.readouterr().out
 
-    # Verifies a failed import can move to another browser, since the session often lives in one setup did not offer first
+    # Verifies a failed import can switch to another browser
     def test_a_failed_import_can_switch_to_another_browser(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
@@ -2393,8 +2383,7 @@ class TestExistingInstaloaderSession:
         assert state.config_values["SESSION_USERNAME"] == "login.user"
 
 
-# Leaves the browser session cache populated, so the next test proves the shared fixture empties it again. A cache
-# carried into a later test changes what that test sees and fails only in a full run, never when it runs alone
+# Leaves the browser session cache populated, so the next test proves the shared fixture empties it
 def test_the_wizard_browser_cache_can_be_left_populated():
     im._WIZARD_BROWSER_SESSION_COUNTS["firefox"] = (1, 1)
 
@@ -2562,8 +2551,7 @@ class TestEditingLoginReasksTheListQuestion:
         im_module._wizard_edit_setup_section(state, "pip")
         return asked, state
 
-    # The list questions are their own menu item, so a session enabled here would otherwise write the shipped
-    # defaults, which collect every name, without the question that exists to prevent that
+    # Enabling a session from the menu must ask the list questions, or the defaults would collect every name
     def test_enabling_a_session_asks_what_to_collect(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), "Use an existing Instaloader session", start_logged_in=False)

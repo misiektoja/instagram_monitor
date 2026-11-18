@@ -73,7 +73,7 @@ def installed_package(package_test_directory: Path, built_wheel: Path, recording
     environment_directory = package_test_directory / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_directory)
     python_executable = environment_directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    # A fresh pip cache stops pip from skipping its weekly check for a newer pip, so the loopback index would record that check
+    # A fresh pip cache makes pip check for a newer pip, which the loopback index would record
     environment = dict(os.environ, PIP_INDEX_URL=recording_index[0], PIP_CACHE_DIR=str(package_test_directory / "pip-cache"))
     result = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps", "--no-index", str(built_wheel)], env=environment, check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -194,8 +194,7 @@ class TestVersionConsistency:
         assert packaged is not None and docstring is not None
         assert im_module.VERSION == packaged.group(1) == docstring.group(1)
 
-    # The citation must name a version somebody can actually cite, so it tracks the newest dated release
-    # notes section rather than the version under development
+    # The citation tracks the newest dated release notes section, not the version under development
     def test_citation_tracks_the_newest_released_version(self):
         notes = (PROJECT_ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
         citation = (PROJECT_ROOT / "CITATION.cff").read_text(encoding="utf-8")
@@ -227,7 +226,7 @@ def test_the_requirements_file_matches_the_packaged_dependencies():
     listed = {match.group(0).casefold().replace("_", "-") for line in requirements.splitlines() if line.strip() and not line.lstrip().startswith("#") if (match := re.match(r"[A-Za-z0-9_.-]+", line))}
 
     assert listed == packaged
-    # The marker is what keeps a Linux or macOS install from pulling a library that only changes the classic Command Prompt
+    # The marker keeps Linux and macOS installs from pulling a library only the classic Command Prompt needs
     assert 'colorama; platform_system == "Windows"' in requirements
 
 

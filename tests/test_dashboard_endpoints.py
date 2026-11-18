@@ -776,8 +776,7 @@ class TestDashboardCredentialBoundary:
         assert response.status_code == 200
         assert im_module.NTFY_ACCESS_TOKEN == "tk_secret"
 
-    # Setting a first webhook destination also clears a pre-existing token, because the token was never
-    # bound to a server the tool had seen. Recovery is the documented dotenv reload
+    # A first webhook destination also clears an existing token, which was never bound to a known server
     def test_ntfy_token_is_cleared_when_a_first_destination_is_set(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "")

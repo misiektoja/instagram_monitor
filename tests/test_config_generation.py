@@ -269,8 +269,7 @@ class TestDotenvPersistence:
             assert content == "WEBHOOK_URL=https://example.test/topic\n"
             assert "NTFY_ACCESS_TOKEN" not in dotenv_values(destination, interpolate=False)
 
-    # A saved value written across several lines is replaced whole, since replacing only its first line left
-    # the rest of the old secret behind and the next run could not parse what it wrote
+    # A value saved across several lines is replaced whole, leaving no part of the old secret behind
     def test_a_multiline_secret_is_replaced_whole(self, im_module):
         with make_test_directory() as directory_name:
             destination = Path(directory_name) / ".env"
@@ -363,7 +362,7 @@ class TestDotenvPersistence:
             assert [path.name for path in directory.iterdir()] == [".env"]
 
 
-# Verifies an assignment the owner exported keeps its export, since dropping it changes what a shell sourcing the file exports
+# Verifies an exported assignment keeps its export
 def test_an_exported_assignment_keeps_its_export(tmp_path, im_module):
     destination = tmp_path / ".env"
     destination.write_text('export SMTP_PASSWORD="old"\nOTHER=keep\n', encoding="utf-8")
@@ -373,7 +372,7 @@ def test_an_exported_assignment_keeps_its_export(tmp_path, im_module):
     assert destination.read_text(encoding="utf-8") == 'export SMTP_PASSWORD="new"\nOTHER=keep\n'
 
 
-# Verifies a line break inside a value is escaped rather than written through, since a raw one would split the assignment
+# Verifies a line break inside a value is escaped, since a raw one would split the assignment
 def test_a_line_break_in_a_value_cannot_split_the_assignment(tmp_path, im_module):
     destination = tmp_path / ".env"
 
@@ -449,7 +448,7 @@ def test_the_template_keeps_the_shared_setting_order(im_module):
     assert [name for name in order if name in SHARED_SETTING_ORDER] == list(SHARED_SETTING_ORDER)
 
 
-# Verifies the linter defaults below the template repeat it in the same order, so a setting cannot drift or be filed twice
+# Verifies the linter defaults below the template repeat it in the same order
 def test_the_linter_defaults_follow_the_template_order(im_module):
     source = Path(im_module.__file__).read_text(encoding="utf-8").split("\n")
     start = next(index for index, line in enumerate(source) if line.startswith("# Do not change values below")) + 1

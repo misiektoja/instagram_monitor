@@ -89,6 +89,8 @@ For the underlying transport detail behind any of these, add `--debug`. Normal o
 
 A `400 Bad Request` naming `feedback_required` means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and `--exposure` counts it as `action_block`.
 
+The same reply naming `graphql/query` is not this limit. Instagram refuses most queries on that endpoint for every signed-in session. See [Profile Lookups Report a Retired Endpoint](#profile-lookups-report-a-retired-endpoint).
+
 Make no requests from that account and that network for several hours, then run `instagram_monitor --doctor` again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise `INSTA_CHECK_INTERVAL`, monitor fewer users and follow the [anti-detection guidance](anti-detection.md). A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.
 
 <a id="anonymous-runs-are-rate-limited"></a>
@@ -99,20 +101,25 @@ A `401 Unauthorized` naming `Please wait a few minutes before you try again` on 
 A session login is limited per account instead, so [importing a session](configuration.md#option-3-session-login-using-browser-cookies-recommended) usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.
 
 <a id="anonymous-profile-http-400"></a>
-## Anonymous Profile Lookup Returns HTTP 400
+## Anonymous Profile Lookup Returns HTTP 400 or 404
 
-Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
+In November 2026 Instagram removed the profile lookup that no-login runs used. It now answers HTTP 404 for every account. Before that it answered HTTP 400 for some public professional profiles. In both cases the target is read from its public embed and profile page for the rest of the run. In verbose mode a notice is printed once per target. Once an account that exists has answered HTTP 404, the run does not send the lookup again. HTTP 401, 429 and connection errors never switch a target.
+
+Versions before 4.2 report the HTTP 404 as `QueryReturnedNotFoundException` and advise checking the username. Upgrade to 4.2 or later.
 
 The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
 
-Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
+An account the embed cannot show is read from the profile page alone. This covers private accounts and public accounts without a post of their own. The page gives the name, the picture, the follower and following counts, the bio and whether the account is private. It gives no post count, so `Posts` shows `Unavailable`.
+
+Each check costs one embed request and at most one page request. A private account costs one page request. If the sources cannot be read, the check reports `Public embed fallback failed`. A name that neither source shows is reported as not found.
 
 Limits:
 
 - Only the six newest posts are visible.
-- A private account has no public embed. Import a session to monitor it.
+- A private account has no post count and its collab posts are not visible. Import a session to monitor them.
+- The profile page may round a large follower count.
 - The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.
-- Reel codes are not available. A target that turns private reports errors instead of a visibility change.
+- Reel codes are not available.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
@@ -122,6 +129,12 @@ In September 2026 Instagram retired `api/v1/users/web_profile_info/` for account
 Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.1 or later.
 
 A signed-in run resolves the target's user id and reads the profile over GraphQL, so it does not use the retired endpoint at all. The id comes from Instagram's search. By late October 2026 search answered HTTP 404 to signed-in sessions, which made 4.0 to 4.0.2 fail with `QueryReturnedNotFoundException` for every target without a saved id. After the first 404 the run stops using search and reads the id from the target's public profile page as a logged-out visitor, through the configured proxy. Resolved ids are saved to `instagram_monitor_user_ids.json` beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.
+
+At the end of October 2026 Instagram also stopped answering most queries on its older GraphQL endpoint, `graphql/query`, for accounts that are signed in. It first redirected to the start page and now answers `400 feedback_required`, on the first request after hours without one too. Version 4.1 and earlier read signed-in profiles, post details, reels and stories through that endpoint and checked sessions with it. On those versions every signed-in check fails at the first request, the circuit breaker stops the account as `action_block` and `--import-browser-session` fails with `HTTP 302`. The account is not limited and waiting does not help.
+
+Upgrade to 4.2 or later, which needs Instaloader 4.16. Then start the tool again. It reads the same data from `api/graphql`, the endpoint Instagram's web app uses. A stop recorded by the earlier version is cleared at startup once the session check passes. A session check now costs two requests: the start page, which shows whether the session is signed in, and one profile query. A refusal from `graphql/query` no longer stops the account and `--exposure` counts it under **Instagram API changed**. Follower lists read with `FOLLOW_LIST_SOURCE = "graphql"` still use the older endpoint. If they fail with this error, set the source to `auto` or `rest`.
+
+Instagram refuses single queries on `graphql/query`, not the whole endpoint. Once a query is refused the tool does not send it again until it is restarted. Later attempts are reported as the same error without a request. Queries that still answer, such as the post comments list, are sent as before.
 
 The profile page is also used for a target that search does not list. A target the page does not show is reported as missing with `ProfileNotExistsException`. Check that the target name is spelled correctly and that the profile still exists.
 

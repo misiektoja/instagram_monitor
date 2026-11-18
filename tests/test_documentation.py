@@ -427,7 +427,7 @@ def test_support_document_routes_every_request_type():
     assert_concepts(support, "session cookies", "webhook URLs", "--debug")
 
 
-# Verifies no repository document points at a missing file or a heading that no longer exists, which is how a docs move leaves dead links behind
+# Verifies no repository document points at a missing file or heading
 def test_no_repository_document_links_at_a_missing_local_target():
     broken = []
     for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
@@ -454,8 +454,7 @@ def test_line_ending_policy_is_declared():
         assert pattern in attributes
 
 
-# Verifies the optional local hooks run the ruff the pinned extra installs, since a second pin here would drift
-# apart from it every time one side is bumped and a locally clean commit would still fail CI
+# Verifies the local hooks run the ruff the pinned extra installs, since a second pin would drift
 def test_local_hooks_run_the_pinned_linter():
     assert re.search(r'lint = \["ruff==([^"]+)"\]', read_asset("pyproject.toml")) is not None
 

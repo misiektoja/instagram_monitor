@@ -1,18 +1,11 @@
-"""Shared pytest fixtures and import setup for the offline test suite.
-
-These tests never touch the network. They import the single-file module
-``instagram_monitor`` and exercise its pure / offline-safe helpers, stubbing
-out the few functions that would otherwise reach Instagram.
-"""
+"""Shared pytest fixtures and import setup for the offline test suite, which never touches the network."""
 
 import ipaddress
 import os
 import sys
 from urllib.parse import urlsplit
 
-# The project ships an installable copy (``instagram_monitor.egg-info``) that may
-# also live in site-packages. Force the in-repo source onto the front of the
-# import path so tests always run against the working tree, never a stale wheel.
+# Put the in-repo source first on the import path, so tests never run against an installed copy
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
@@ -70,7 +63,7 @@ def real_smtp_sign_in(monkeypatch, accepted_smtp_sign_in):
     monkeypatch.setattr(im, "_wizard_verify_smtp", _REAL_WIZARD_VERIFY_SMTP)
 
 
-# Keeps the identity exposure ledger inside the test's temporary directory so no test can write account state into the repository
+# Keeps the identity exposure ledger inside the test's temporary directory
 @pytest.fixture(autouse=True)
 def isolated_exposure_ledger(monkeypatch, tmp_path):
     ledger_path = tmp_path / "exposure" / im.EXPOSURE_STATE_FILENAME
@@ -94,8 +87,8 @@ def _is_loopback_host(host: str) -> bool:
         return False
 
 
-# Refuses curl_cffi requests to any host but this machine and records each one. The curl_cffi adapter overrides
-# HTTPAdapter.send, so a test that stubs only the requests transport would otherwise reach Instagram through libcurl
+# Refuses curl_cffi requests to any host but this machine and records each one. Needed because the curl_cffi
+# adapter overrides HTTPAdapter.send, which a stubbed requests transport does not cover
 def _guard_curl_cffi(monkeypatch, refused: list) -> None:
     curl_requests, curl_exceptions = im._curl_requests, im._curl_exceptions
     if curl_requests is None or curl_exceptions is None:
@@ -115,8 +108,8 @@ def _guard_curl_cffi(monkeypatch, refused: list) -> None:
     monkeypatch.setattr(curl_requests.Session, "request", request)
 
 
-# Refuses urllib3 requests, which carry every requests call, to any host but this machine and records each one. The
-# guard sits below HTTPAdapter.send, so a test that stubs the requests transport still gets its stub's answer
+# Refuses urllib3 requests to any host but this machine and records each one. A stubbed requests transport still
+# answers, since the guard sits below HTTPAdapter.send
 def _guard_urllib3(monkeypatch, refused: list) -> None:
     real_urlopen = urllib3.connectionpool.HTTPConnectionPool.urlopen
 
@@ -137,9 +130,8 @@ def _guard_urllib3(monkeypatch, refused: list) -> None:
     monkeypatch.setattr(urllib3.connectionpool.HTTPConnectionPool, "urlopen", urlopen)
 
 
-# Keeps every test off the network. A request to another host fails as a connection error, so the code under test
-# behaves as it would offline. The test still fails at teardown in case that code swallowed the error. A test that
-# expects a refusal requests this fixture and clears the list it yields
+# Keeps every test off the network. A request to another host fails as a connection error and fails the test at
+# teardown. A test that expects a refusal requests this fixture and clears the list it yields
 @pytest.fixture(autouse=True)
 def offline_network(monkeypatch):
     refused: list = []
@@ -173,24 +165,24 @@ def deterministic_globals(monkeypatch, tmp_path):
     # The real CLI path leaves these set, and every account-scoped helper keys off them
     monkeypatch.setattr(im, "SESSION_USERNAME", "", raising=False)
     monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
-    # A run derives these from the configured identity and leaves them set, and the settings endpoint writes
-    # the rest straight onto the module, so a later test would inherit whichever identity ran before it
+    # A run leaves these identity settings on the module, so they are reset for the next test
     monkeypatch.setattr(im, "USER_AGENT", "", raising=False)
     monkeypatch.setattr(im, "USER_AGENT_MOBILE", "", raising=False)
     monkeypatch.setattr(im, "HTTP_BACKEND", "curl_cffi", raising=False)
     monkeypatch.setattr(im, "CURL_CFFI_IMPERSONATE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_SOURCE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium", raising=False)
+    # A query one test saw refused must still be sent by the next
+    im.GRAPHQL_QUERIES_REFUSED.clear()
+    im.ANONYMOUS_PROFILE_LOOKUP_GONE = False
     # Setup and the dashboard both write these, and the wizard snapshots the module to build its baseline
     monkeypatch.setattr(im, "SKIP_FOLLOWERS", False, raising=False)
     monkeypatch.setattr(im, "SKIP_FOLLOWINGS", False, raising=False)
-    # Setup and the profile pickers enumerate the real browsers of whoever runs the suite, and reading their
-    # cookie databases makes a test depend on that machine's browsers and wait on the ones that are running
+    # Stubbed, so no test reads the real browsers and cookie databases of the machine running the suite
     monkeypatch.setattr(im, "list_firefox_profiles", lambda: [], raising=False)
     monkeypatch.setattr(im, "list_chromium_profiles", lambda browser: [], raising=False)
     im._WIZARD_BROWSER_SESSION_COUNTS.clear()
-    # A run that reported a broken proxy leaves the record on the module, and Doctor reads it in place of the
-    # live settings, so a later test would inherit the earlier run's proxy problem
+    # A run that reported a broken proxy leaves the record on the module, where Doctor would read it in a later test
     im.PROXY_STARTUP_ERRORS.clear()
     # Resolved user ids are reused for the whole run, so one test's target must not answer for another's
     im.USER_ID_CACHE.clear()
@@ -215,8 +207,7 @@ def deterministic_globals(monkeypatch, tmp_path):
         im.ACCOUNT_BREAKER_MEMORY.clear()
         im.ACCOUNT_RECOVERY_ATTEMPTED.clear()
         im.ACCOUNT_PAUSED_TARGETS.clear()
-    # load_dotenv writes into os.environ and nothing removes it again, so a test that loads a dotenv would
-    # otherwise leak its secrets into every later test through the exported-environment lookup at startup
+    # load_dotenv writes into os.environ and nothing removes it, so loaded secrets would leak into later tests
     for secret in im.SECRET_KEYS:
         monkeypatch.delenv(secret, raising=False)
     yield

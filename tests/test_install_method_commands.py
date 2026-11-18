@@ -413,8 +413,7 @@ def test_the_session_recovery_command_carries_the_config_sentinel(im_module, mon
 
 
 class TestContainerFirefoxMounts:
-    # The container globs its own ~/.mozilla/firefox/*/cookies.sqlite, so every host mount has to present the
-    # profile directories themselves. Windows keeps them one level deeper, under a Profiles folder
+    # Every host mount must present the profile directories themselves. Windows keeps them one level deeper
     @pytest.mark.parametrize("host_os", sorted(("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")))
     def test_every_host_mounts_the_profile_directories(self, im_module, host_os):
         source = im_module.CONTAINER_FIREFOX_HOSTS[host_os][1].strip('"').rsplit(":/home/instagram", 1)[0]
@@ -455,8 +454,7 @@ class TestContainerFirefoxMounts:
 
 
 class TestRecoveryNamesEveryImportBrowser:
-    # Nothing records which browser a session came from, so the Firefox command has to name the alternatives rather
-    # than sending a Chrome, Brave or Chromium user to a browser they do not use
+    # Nothing records which browser a session came from, so the Firefox command names the alternatives
     def test_the_hint_names_every_other_supported_browser(self, im_module):
         hint = im_module.session_recovery_browser_hint()
 
@@ -477,8 +475,7 @@ class TestRecoveryNamesEveryImportBrowser:
 
         assert "logging in via Firefox" not in source
 
-    # Every message built around the import command has to name the alternatives, or the ones that do not become
-    # the messages that quietly send a Chrome user to Firefox
+    # Every message built around the import command names the alternatives
     def test_every_use_of_the_recovery_command_names_the_alternatives(self, im_module):
         source = Path(im_module.__file__).read_text(encoding="utf-8")
         uses = [line for line in source.splitlines() if "{session_recovery_command()}" in line]

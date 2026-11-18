@@ -675,8 +675,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(im_module, monkeypatch, caps
     assert "* Webhook sent through Discord" in capsys.readouterr().out
 
 
-# Verifies the delivery line follows the flag rather than printing on every alert, so an ordinary run stays
-# quiet and --send-test-webhook reports the result once through its own confirmation
+# Verifies the delivery line follows the flag, so an ordinary run stays quiet
 def test_a_delivered_webhook_stays_quiet_without_the_flag(im_module, monkeypatch, capsys):
     monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")

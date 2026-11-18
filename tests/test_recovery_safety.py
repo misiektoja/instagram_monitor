@@ -227,8 +227,7 @@ def test_setup_backup_keeps_settings_with_short_secret(monitor, tmp_path):
     assert "UNRELATED = 1800" in content
 
 
-# Verifies the outage reminder can hold its trailer, so an alert delivered by the same check is printed inside
-# the report rather than under the separator that ended it
+# Verifies the outage reminder can hold its trailer, so an alert from the same check is printed inside the report
 def test_the_outage_reminder_can_hold_its_trailer(monitor, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     advice = monitor.make_recovery_advice("network.unavailable", "The network is unreachable", "Check connectivity then retry", True)
@@ -254,8 +253,7 @@ def test_every_failing_path_defers_the_reminder_trailer(monitor):
     assert source.count('print_cur_ts("Liveness check, timestamp:\\t")') >= len(calls) + 1
 
 
-# Verifies a reported change names the window the run observed, which a failing check leaves further back than
-# the configured interval
+# Verifies a reported change names the window the run observed, which can be longer than the configured interval
 def test_a_reported_change_names_the_window_the_run_observed(monitor, monkeypatch):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "INSTA_CHECK_INTERVAL", 3600)

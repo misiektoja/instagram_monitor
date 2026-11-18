@@ -6,9 +6,8 @@ import inspect
 import pytest
 
 
-# Interpolations that are safe without escape() because the value is a counter, a fixed word this tool
-# chooses itself, or a username already restricted to [a-z0-9._] by normalize_instagram_username.
-# Listed explicitly so a new unescaped name cannot slip in behind a blanket exemption
+# Interpolations that are safe without escape(): counters, fixed words and usernames already restricted to
+# [a-z0-9._]. Listed explicitly so a new unescaped name cannot slip in
 ALLOWED_UNESCAPED = frozenset({
     "user",
     "source",
@@ -30,8 +29,7 @@ ALLOWED_UNESCAPED = frozenset({
     "likes_users_list_mbody", "post_comments_list_mbody",
 })
 
-# Helpers that emit their own markup or render only dates, durations and numbers. None of them can carry
-# Instagram-supplied text, so escaping their output would only mangle the timestamps users read
+# Helpers that emit their own markup or render only dates, durations and numbers, never Instagram-supplied text
 SAFE_HELPERS = frozenset({"get_cur_ts", "display_time", "get_date_from_ts", "get_short_date_from_ts", "calculate_timespan", "get_range_of_dates_from_tss", "check_window_html"})
 
 # Attribute access that resolves to a fixed word rather than free text

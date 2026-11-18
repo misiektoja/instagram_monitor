@@ -75,6 +75,8 @@ This mode does not sign in to Instagram. It can monitor new or deleted regular p
 
 No-login mode needs no Instagram credentials and makes fewer requests than logged-in mode. Instagram can still limit or block public requests, so this mode does not guarantee uninterrupted access.
 
+Since November 2026 this mode reads targets from their public embed and profile page. [Anonymous Profile Lookup Returns HTTP 400 or 404](troubleshooting.md#anonymous-profile-http-400) lists what those sources show.
+
 <a id="logged-in-mode-with-session-login"></a>
 ## Logged-In Mode (With Session Login)
 

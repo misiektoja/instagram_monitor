@@ -329,8 +329,8 @@ def test_swallows_the_refusal():
 """
 
 
-# The suite refuses curl_cffi and requests traffic to other hosts. curl_cffi needs a guard of its own because its adapter
-# overrides the HTTPAdapter.send that offline stubs usually replace. The loopback tests above show local servers stay reachable
+# The suite refuses curl_cffi and requests traffic to other hosts. curl_cffi needs its own guard, because its
+# adapter overrides the HTTPAdapter.send that offline stubs usually replace
 class TestOfflineGuard:
     # A request to another host fails as a connection error before libcurl opens a connection
     def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch, offline_network):

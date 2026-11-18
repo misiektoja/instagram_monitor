@@ -270,7 +270,7 @@ class TestConfigDiscoverySentinel:
         assert "At least one TARGET_USERNAME argument is required" in output
 
 
-# Verifies the early peek carries the theme, since --help is printed and exited from inside argparse before the config load
+# Verifies the early config peek carries the theme, since argparse prints --help before the config load
 def test_the_early_output_config_carries_the_help_theme(im_module, monkeypatch, tmp_path):
     (tmp_path / "instagram_monitor.conf").write_text('COLOR_THEME = {"help_heading": "bright_red"}\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)

@@ -38,14 +38,13 @@ It works only in [Logged-In Mode](configuration.md#logged-in-mode-with-session-l
 
 After a check cycle, the tool may perform one or more of these requests:
 
-- fetch one post from the Explore feed
+- read the first page of the Explore grid
 - open the session account's profile
-- fetch one post from a tag listed in `MY_HASHTAGS`
 - open the profile of an account followed by the session account
 
-Leaving `MY_HASHTAGS` empty simply skips the hashtag request. The other actions still run.
+The hashtag request is not sent at present. Instagram no longer answers signed-in sessions on the hashtag endpoints the tool knows, so `MY_HASHTAGS` has no effect for now.
 
-The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list.
+The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list. It opens the chosen profile by the id from that list.
 
 By default, it performs about five of these actions over 24 hours. Change the limit with `DAILY_HUMAN_HITS`.
 

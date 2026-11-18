@@ -42,8 +42,7 @@ class TestFirefoxCookieImport:
 
 
 class TestWindowsFirefoxDiscovery:
-    # Builds a Windows home directory under tmp_path and points discovery at it, with the real profile
-    # enumeration restored so the globs run against that tree rather than the host's browsers
+    # Builds a Windows home directory under tmp_path and points discovery at it, with real profile enumeration restored
     @pytest.fixture
     def windows_home(self, im_module, monkeypatch, tmp_path, real_browser_profiles):
         home = tmp_path / "home"
@@ -81,8 +80,7 @@ class TestWindowsFirefoxDiscovery:
         assert [profile["install"] for profile in profiles] == ["", "Microsoft Store"]
         assert Path(im_module.resolve_firefox_profile("store.work")) == store
 
-    # Verifies a Store profile is told apart from a regular one of the same name, which is the usual case
-    # since both installs create a profile called default-release
+    # Verifies a Store profile is told apart from a regular one of the same name
     def test_a_store_profile_is_distinguished_from_a_regular_one(self, im_module, windows_home):
         _, roaming, local = windows_home
         self._make_profile(roaming / "Mozilla/Firefox/Profiles/aaa.default-release/cookies.sqlite")
@@ -141,8 +139,7 @@ class TestWindowsFirefoxDiscovery:
         assert im_module.firefox_cookie_patterns()[0] == str(custom)
         assert [Path(p["path"]) for p in im_module.list_firefox_profiles()] == [custom, regular]
 
-    # Verifies the shipped configuration and the environment's answer for the same directory collapse into one
-    # pattern, so the ordinary roaming location is not globbed three times on every Windows run
+    # Verifies the shipped configuration and the environment's answer for the same directory collapse into one pattern
     def test_the_roaming_location_is_searched_once(self, im_module, monkeypatch, windows_home):
         _, roaming, local = windows_home
         monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite")
@@ -311,8 +308,7 @@ class TestInstagramSessionProbe:
 
 
 class TestBrowserProfileStub:
-    # Builds a synthetic Firefox and Chromium tree holding one profile each, so the guards below fail wherever they
-    # run rather than only on a machine with a browser installed
+    # Builds a synthetic Firefox and Chromium tree with one profile each, so the guards need no installed browser
     @staticmethod
     def synthetic_roots(im_module, monkeypatch, tmp_path):
         firefox_profile = tmp_path / "firefox" / "abc.default"
@@ -324,8 +320,7 @@ class TestBrowserProfileStub:
         monkeypatch.setattr(im_module, "firefox_cookie_patterns", lambda: (str(tmp_path / "firefox" / "*" / "cookies.sqlite"),))
         monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path / "chromium"))
 
-    # Verifies the suite never enumerates the browser profiles of whoever runs it. Without the shared stub a listing
-    # differs per machine, costs a SQLite open per profile and waits on the browsers that are running
+    # Verifies the suite never enumerates the browser profiles of the machine running it
     def test_browser_profile_discovery_is_stubbed_by_default(self, im_module, monkeypatch, tmp_path):
         self.synthetic_roots(im_module, monkeypatch, tmp_path)
 
@@ -352,8 +347,7 @@ class TestSessionExpiry:
                 connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, encrypted_value BLOB, expires_utc INTEGER)")
                 connection.execute("INSERT INTO cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", b"v10", expiry))
 
-    # Verifies an expired session is not marked as signed in, whichever unit the profile records expiry in. Current
-    # Firefox writes milliseconds and older profiles write seconds, and nothing in the schema says which
+    # Verifies an expired session is not marked as signed in, whether expiry is stored in seconds or milliseconds
     @pytest.mark.parametrize("firefox,scale", [(True, 1), (True, 1000), (False, None)])
     def test_an_expired_session_is_not_called_signed_in(self, im_module, tmp_path, firefox, scale):
         now = 1_790_000_000.0
@@ -382,8 +376,7 @@ class TestSessionExpiry:
 
         assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=True, now=1_790_000_000.0) is True
 
-    # Verifies a Firefox profile holding only an expired session says so from the database, instead of spending an
-    # Instagram request to be told what the expiry already recorded
+    # Verifies an expired Firefox session is reported from the database, without an Instagram request
     def test_an_expired_firefox_profile_fails_before_any_request(self, im_module, tmp_path, monkeypatch):
         cookie_path = tmp_path / "cookies.sqlite"
         self.write_session(cookie_path, int(time.time() - 86400), True)
@@ -396,8 +389,7 @@ class TestSessionExpiry:
         assert "Instagram session expired on" in str(failure.value)
         assert "sign in to Instagram in Firefox again" in str(failure.value)
 
-    # Verifies a Chromium profile holding only an expired session is refused before the encryption key is requested,
-    # so the failure costs neither a keyring prompt nor a request
+    # Verifies an expired Chromium session is refused before the encryption key is requested
     def test_an_expired_chromium_profile_fails_before_the_keyring(self, im_module, tmp_path, monkeypatch):
         cookie_path = tmp_path / "Cookies"
         self.write_session(cookie_path, int((time.time() - 86400 + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000), False)
@@ -555,9 +547,8 @@ class TestLiveBrowserCookies:
 
 
 class TestReadOnlyMediaFallback:
-    # The Docker Firefox import mounts the profile read-only, and SQLite cannot open a WAL database that way
-    # because it still needs to write the shared-memory file. Losing the immutable fallback would break that
-    # import completely, which is why this pins it rather than trusting the read-only mode alone
+    # The Docker Firefox import mounts the profile read-only, where SQLite cannot open a WAL database. This pins the
+    # immutable fallback
     def test_a_read_only_profile_still_imports(self, im_module):
         ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
@@ -692,8 +683,7 @@ class TestChromiumProfileResolution:
 
         assert "Default (Your Chrome)" in str(failure.value)
 
-    # Verifies a submitted profile cannot reach a cookie database outside the browser's own profiles, which is
-    # the guarantee the dashboard already made for Firefox cookie paths
+    # Verifies a submitted profile cannot reach a cookie database outside the browser's own profiles
     @pytest.mark.parametrize("escape", ["../../../../tmp/evil", "/tmp/evil", "Default/../../../tmp"])
     def test_a_profile_cannot_escape_the_enumerated_list(self, im_module, monkeypatch, escape):
         monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: self._profiles())
@@ -778,9 +768,8 @@ class TestChromiumKeyringFailure:
         assert "allow the keychain or keyring prompt" in str(failure.value)
         assert "logged in to Instagram" not in str(failure.value)
 
-    # Verifies each failure is attributed to the cause the reader must actually fix. The strings are taken verbatim
-    # from the installed keyring backends and from pycookiecheat, several of which name neither the keyring nor the
-    # keychain, so a classifier keyed on those two words alone sends most of them to the wrong advice
+    # Verifies each failure is attributed to the cause to fix. The strings are verbatim from keyring backends and
+    # pycookiecheat, and several name neither the keyring nor the keychain
     @pytest.mark.parametrize("error_text,expected", [
         ("Failed to unlock the collection!", "allow the keychain or keyring prompt"),
         ("Failed to unlock the item!", "allow the keychain or keyring prompt"),
@@ -796,8 +785,7 @@ class TestChromiumKeyringFailure:
     def test_each_failure_names_the_cause_to_fix(self, im_module, error_text, expected):
         assert expected in im_module.chromium_cookie_failure_message("chrome", Exception(error_text))
 
-    # Verifies the alternatives name the profile the way the picker showed it. A bare directory such as "Profile 3"
-    # is not what the reader chose from, and the Firefox path already names its profiles the same way
+    # Verifies the alternatives name the profile as the picker showed it, not by a bare directory such as "Profile 3"
     def test_the_alternatives_name_profiles_the_way_the_picker_did(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Darwin")
         monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Default"}, {"dir": "Profile 3", "name": "Work"}])
@@ -817,8 +805,7 @@ class TestChromiumKeyringFailure:
 
 
 class TestDashboardChromiumImport:
-    # The dashboard states that it only imports databases it enumerated itself, and that guarantee was previously
-    # enforced for Firefox cookie paths but not for the Chromium profile the same handler accepts
+    # The dashboard imports only databases it enumerated itself, which also has to hold for Chromium profiles
     def test_a_submitted_profile_is_resolved_against_the_enumerated_list(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
         monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Your Chrome", "cookie_file": "/u/Default/Cookies"}])
@@ -842,8 +829,7 @@ class TestDashboardChromiumImport:
 
 
 class TestCookieDatabaseOpenCost:
-    # A running browser holds its database locked, and the read-only open that sees the log waits out the busy
-    # timeout before failing. Attempting it on every profile made listing them stall for seconds per profile
+    # The read-only open waits out the busy timeout on a locked database, so it is skipped when there is no log
     def test_a_database_without_a_log_skips_the_read_only_attempt(self, im_module, monkeypatch):
         ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:

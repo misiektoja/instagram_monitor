@@ -141,7 +141,7 @@ def test_the_smtp_context_honors_the_setting(im_module, tls_setting, verify):
     assert (context.verify_mode == ssl.CERT_REQUIRED) is verify
 
 
-# Verifies no SMTP call site builds its own context, which would keep that one connection verifying while the setting is off
+# Verifies no SMTP call site builds its own context, which would ignore the verification setting
 def test_only_the_shared_helper_builds_an_smtp_context():
     assert SOURCE.count("ssl.create_default_context()") == 1
 

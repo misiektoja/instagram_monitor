@@ -34,8 +34,8 @@ def _page_lookup(user_id, seen=None):
     return classmethod(from_username)
 
 
-# Builds a context that records every request and answers from a scripted reply table. The GraphQL reply is a
-# mutable dict shared with the caller, so a test can change a field and read the profile again
+# Builds a context that records every request and answers from scripted replies. The GraphQL reply is a mutable
+# dict shared with the caller
 def _context(im_module, logged_in=True, search_users=(), graphql=None, username=None, session=None, search_error=None):
     calls = []
     graphql_user = graphql if graphql is not None else {"data": {"user": {"username": "target", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
@@ -76,8 +76,7 @@ class TestSearchResolvesTheUserId:
 
 
 class TestTheUserIdIsResolvedOncePerRun:
-    # A monitored target is looked up every cycle, so re-resolving its id would spend a request on an answer that
-    # cannot change
+    # A target is looked up every cycle, so its id is resolved once
     def test_a_second_lookup_sends_no_request(self, im_module):
         context, calls = _context(im_module, search_users=[_search_user("target", "77")])
 
@@ -95,8 +94,7 @@ class TestTheUserIdIsResolvedOncePerRun:
 
 
 class TestASignedInLookupAvoidsTheRetiredEndpoint:
-    # Instagram answers feedback_required on web_profile_info for every signed-in session, so the lookup resolves
-    # the id through search and reads the profile over GraphQL instead
+    # web_profile_info is refused for signed-in sessions, so the id comes from search and the profile from GraphQL
     def test_the_profile_is_read_over_graphql(self, im_module, monkeypatch):
         context, calls = _context(im_module, search_users=[_search_user("target", "77")])
         monkeypatch.setattr(im_module.instaloader.Profile, "from_username", classmethod(lambda cls, ctx, name: pytest.fail("the retired endpoint was used")))
@@ -107,8 +105,7 @@ class TestASignedInLookupAvoidsTheRetiredEndpoint:
         assert [path for path, _ in calls] == ["web/search/topsearch/", "graphql/27937681195819736"]
         assert calls[1][1]["id"] == "77"
 
-    # Search does not list every account, so a target it cannot find is read by the id its profile page names
-    # rather than being reported gone. The id is kept, so the next check reads the profile without either lookup
+    # A target search does not list is read by the id its profile page names. The id is kept for the next check
     def test_a_name_search_cannot_find_is_read_by_its_page_id(self, im_module, monkeypatch):
         context, calls = _context(im_module, search_users=[])
         monkeypatch.setattr(im_module.instaloader.Profile, "from_username", _page_lookup(77))
@@ -136,8 +133,7 @@ class TestASignedInLookupAvoidsTheRetiredEndpoint:
 
 
 class TestARetiredSearchFallsBackToTheProfilePage:
-    # Instagram answers HTTP 404 on the search path for signed-in sessions, which is the path being gone rather than
-    # the account missing, so it resolves to nothing instead of failing the lookup
+    # A 404 on the search path means the path is gone, not the account, so it resolves to nothing
     def test_a_search_404_resolves_to_nothing(self, im_module):
         context, calls = _context(im_module, search_error=_search_gone(im_module))
 
@@ -152,8 +148,7 @@ class TestARetiredSearchFallsBackToTheProfilePage:
         assert im_module.user_id_from_search(context, "other") is None
         assert len(calls) == 1
 
-    # Instaloader retries a failed request up to the client's connection attempt limit, and the search path answers
-    # 404 every time, so it is asked once whatever limit the client uses. The limit is restored afterwards
+    # The search path is asked once whatever the client's attempt limit, which is restored afterwards
     @pytest.mark.parametrize("gone", [False, True], ids=["answered", "404"])
     def test_search_is_asked_once_without_retries(self, im_module, gone):
         context, _ = _context(im_module, search_error=_search_gone(im_module) if gone else None)
@@ -170,8 +165,7 @@ class TestARetiredSearchFallsBackToTheProfilePage:
         assert limits == [1]
         assert context.max_connection_attempts == 3
 
-    # The profile page still names the id. The profile is then read over GraphQL with the session, so a session
-    # probe through this lookup still makes a signed-in request it can fail on
+    # The page names the id and the profile is read over GraphQL with the session, so a session probe can still fail
     def test_the_profile_is_read_by_the_id_its_page_names(self, im_module, monkeypatch):
         context, calls = _context(im_module, search_error=_search_gone(im_module))
         seen = []
@@ -200,8 +194,7 @@ class TestARetiredSearchFallsBackToTheProfilePage:
             im_module.profile_from_username_resilient(SimpleNamespace(context=context), "target")
         assert im_module.stored_user_id("target") is None
 
-    # An id already read this lookup that answered to another name is not read again when the page names it too.
-    # The page's own profile is returned as Instaloader built it
+    # An id that already answered to another name is not read again when the page names it too
     def test_an_id_already_read_is_not_read_again(self, im_module, monkeypatch):
         im_module.remember_user_id("target", "77")
         renamed = {"data": {"user": {"username": "renamed", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
@@ -216,8 +209,7 @@ class TestARetiredSearchFallsBackToTheProfilePage:
 
 
 class TestTheSignedInAccountIsNotSearchedFor:
-    # The session's own cookies carry the id of the account it is signed in as, so a search for it would spend a
-    # request on a known answer
+    # The session's cookies carry its own account id, so no search is sent for it
     def test_the_own_id_comes_from_the_session(self, im_module):
         context, calls = _context(im_module, username="owner", session=_session_of("101"))
 
@@ -249,8 +241,7 @@ class TestTheSignedInAccountIsNotSearchedFor:
 
 
 class TestTheGraphqlReadGoesThroughInstaloader:
-    # The profile is a real Instaloader one with only the network replaced, so the fields the monitor reads go
-    # through Instaloader's own normalization of the GraphQL reply rather than a stub of it
+    # The profile is a real Instaloader one with only the network replaced, so its own normalization runs
     def test_the_full_metadata_is_read_through_the_real_profile(self, im_module):
         graphql = {"data": {"user": {"username": "owner", "pk": "101", "full_name": "Owner", "biography": "Owner bio", "follower_count": 12, "following_count": 7, "media_count": 3, "is_private": False, "is_verified": False, "profile_pic_url_hd": "https://example.org/avatar.jpg"}}}
         context, calls = _context(im_module, username="owner", session=_session_of("101"), graphql=graphql)
@@ -282,8 +273,7 @@ class TestTheGraphqlReadGoesThroughInstaloader:
 class TestARetiredEndpointDoesNotStopTheAccount:
     RETIRED = 'AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=target'
 
-    # The retired endpoint refuses whatever the account is doing, so reading it as an account action would stop a
-    # session every other endpoint still answers
+    # The retired endpoint refuses any account, so its reply is not an account action
     def test_it_is_not_an_account_level_failure(self, im_module):
         failure_class = im_module.classify_failure_class(self.RETIRED)
 
@@ -312,9 +302,36 @@ class TestARetiredEndpointDoesNotStopTheAccount:
         assert "not blocked" in advice.fix
 
 
+class TestTheRefusedGraphqlEndpointDoesNotStopTheAccount:
+    REFUSED = 'AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/graphql/query'
+
+    # The reply describes the endpoint, not the account, so waiting never clears it
+    @pytest.mark.parametrize("message", [REFUSED, REFUSED + "?query_hash=d6f4427fbe92d846298cf93df0b937d3&variables=%7B%7D"])
+    def test_it_is_not_an_account_level_failure(self, im_module, message):
+        failure_class = im_module.classify_failure_class(message)
+
+        assert failure_class == "endpoint_retired"
+        assert im_module.is_account_level_failure(failure_class) is False
+        assert im_module.is_session_flagged(message, None) is False
+
+    # The same reply from api/graphql is still an account limit
+    def test_the_same_reply_from_the_web_app_endpoint_still_stops_the_account(self, im_module):
+        message = 'AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/graphql'
+
+        assert im_module.classify_failure_class(message) == "action_block"
+        assert im_module.is_session_flagged(message, None) is True
+
+    # The advice names the endpoint that refused
+    def test_the_advice_names_the_graphql_endpoint(self, im_module):
+        advice = im_module.classify_recovery_error(self.REFUSED, is_logged_in=True)
+
+        assert advice.code == "instagram.endpoint_retired"
+        assert "not blocked" in advice.fix and "graphql/query" in advice.fix
+        assert "web_profile_info" not in advice.fix
+
+
 class TestTheReelsCountIsReused:
-    # Instagram stopped answering the endpoint that reports the count, so the fallback walks the whole reel list.
-    # A posts count that has not moved means that walk would arrive at the number already on hand
+    # Counting reels walks the whole list, so an unchanged posts count reuses the count on hand
     def test_an_unchanged_posts_count_reuses_the_count(self, im_module, monkeypatch):
         walks = []
         monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: walks.append(user) or 7)
@@ -362,8 +379,7 @@ class TestTheReelsCountIsReused:
 
 
 class TestResolvedIdsOutliveTheRun:
-    # A name keeps its id for as long as the account exists, so resolving it again after a restart would spend a
-    # request on an answer the previous run already wrote down
+    # A stored id is reused after a restart without a request
     def test_a_stored_id_is_read_back_without_a_request(self, im_module):
         context, calls = _context(im_module, search_users=[_search_user("target", "77")])
         assert im_module.resolve_user_id(context, "target") == "77"
@@ -393,8 +409,7 @@ class TestResolvedIdsOutliveTheRun:
 
         assert im_module.resolve_user_id(context, "target") == "77"
 
-    # A freed username can be taken by another account, so an id is trusted only while it answers to the name it
-    # was stored for. The stored one is dropped and the name looked up again rather than monitoring a stranger
+    # An id is trusted only while it answers to the stored name. Otherwise it is dropped and the name looked up again
     def test_an_id_answering_to_another_name_is_dropped(self, im_module, monkeypatch):
         im_module.remember_user_id("target", "11")
         context, calls = _context(im_module, search_users=[_search_user("target", "77")])
@@ -414,8 +429,7 @@ class TestResolvedIdsOutliveTheRun:
 
 
 class TestReelsAreOptional:
-    # Instagram stopped answering the endpoint that reports a reel count, so reading the list is the only way left
-    # and it is both expensive and often refused. A run that does not need reels should not pay for that
+    # Reading the reel list is expensive and often refused, so a run that does not need reels skips it
     def test_the_latest_post_lookup_reads_no_reels_by_default(self, im_module, monkeypatch):
         walked = []
         profile = SimpleNamespace(get_posts=lambda: iter(()), get_reels=lambda: walked.append("reels") or iter(()))

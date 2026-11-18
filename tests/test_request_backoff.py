@@ -1,14 +1,13 @@
-"""Offline tests for the jitter and back-off wrapper around every Instagram request.
+"""Offline tests for the jitter and back-off wrapper around every Instagram request."""
 
-The wrapper gives up after a few back-offs. What it raises then decides what every layer above does,
-so a rate limit reported as a missing endpoint sends the auto follow list source to GraphQL and scans
-the whole list again while Instagram is already throttling the account.
-"""
-
+import io
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import instaloader
 import pytest
+import requests
+from requests.adapters import HTTPAdapter
 
 import instagram_monitor as im
 
@@ -96,12 +95,7 @@ class TestASpentBackoffBudgetKeepsItsRealCause:
 
 
 class TestTheAutoListSourceSeesTheRealCause:
-    """The wrapper and the auto source were each correct on their own.
-
-    The wrapper reported a spent back-off budget as a missing endpoint and the auto source treated a
-    missing endpoint as reason to read the whole list over GraphQL, so a throttled or challenged
-    account was answered with a second full scan on the other surface.
-    """
+    """A spent back-off budget is a rate limit, so the auto source must not rescan the list over GraphQL."""
 
     # Drives the real wrapper underneath the real auto source and returns what came back
     @staticmethod
@@ -152,3 +146,118 @@ def test_checkpoint_followed_by_success_never_retries(monkeypatch, wrapper):
         im.instagram_wrap_request(request)("GET", FOLLOWERS_URL)
     assert len(attempts) == 1
     assert len(replies) == 1
+
+
+GRAPHQL_URL = "https://www.instagram.com/graphql/query"
+WEB_APP_URL = "https://www.instagram.com/api/graphql"
+REFUSED_BODY = '{"message": "feedback_required", "status": "fail"}'
+
+
+# Stands in for a requests session holding a session cookie and scripted replies
+class _Session:
+    # Starts with the sessionid cookie value and the replies to hand out in order
+    def __init__(self, sessionid, replies):
+        self.cookies = SimpleNamespace(get_dict=lambda: {"sessionid": sessionid})
+        self.replies = list(replies)
+        self.sent = []
+
+    # Records the query the request names and returns the next scripted reply
+    def request(self, method, url, params=None, data=None, **kwargs):
+        fields = params or data or {}
+        self.sent.append(fields.get("query_hash") or fields.get("doc_id"))
+        return self.replies.pop(0)
+
+
+class TestARefusedGraphqlQueryIsNotSentAgain:
+    # A refused query is remembered, so its next request is not sent and reads as an API change
+    @pytest.mark.parametrize("jitter", [True, False])
+    @pytest.mark.parametrize("method, field, key", [("GET", "params", "query_hash"), ("POST", "data", "doc_id")])
+    def test_a_refused_query_is_not_sent_again(self, wrapper, monkeypatch, jitter, method, field, key):
+        monkeypatch.setattr(im, "ENABLE_JITTER", jitter)
+        session = _Session("signed-in", [_response(400, REFUSED_BODY)])
+        wrapped = im.instagram_wrap_request(session.request, session)
+        query = {field: {key: "followers", "variables": "{}"}}
+
+        assert wrapped(method, GRAPHQL_URL, **query).status_code == 400
+        with pytest.raises(instaloader.exceptions.AbortDownloadException) as error:
+            wrapped(method, GRAPHQL_URL, **query)
+
+        assert session.sent == ["followers"]
+        failure_class = im.classify_failure_class(im.format_error_message(error.value))
+        assert failure_class == "endpoint_retired"
+        assert im.is_account_level_failure(failure_class) is False
+
+    # Instagram refuses single queries, so one it has not refused, such as the comments list, is still sent
+    def test_another_query_is_still_sent(self, wrapper):
+        session = _Session("signed-in", [_response(400, REFUSED_BODY), _response(200, "{}")])
+        wrapped = im.instagram_wrap_request(session.request, session)
+
+        wrapped("GET", GRAPHQL_URL, params={"query_hash": "followers"})
+        assert wrapped("GET", GRAPHQL_URL, params={"query_hash": "comments"}).status_code == 200
+
+        assert session.sent == ["followers", "comments"]
+
+    # Only a feedback_required reply marks a query as refused
+    @pytest.mark.parametrize("status, body", [(200, "{}"), (400, '{"message": "Bad Request"}'), (500, "feedback_required")])
+    def test_other_replies_keep_the_query(self, wrapper, status, body):
+        session = _Session("signed-in", [_response(status, body), _response(200, "{}")])
+        wrapped = im.instagram_wrap_request(session.request, session)
+
+        wrapped("GET", GRAPHQL_URL, params={"query_hash": "followers"})
+        wrapped("GET", GRAPHQL_URL, params={"query_hash": "followers"})
+
+        assert session.sent == ["followers", "followers"]
+
+    # The web app endpoint answers the query the older one refused, so it is never blocked
+    def test_the_web_app_endpoint_is_still_called(self, wrapper):
+        im.GRAPHQL_QUERIES_REFUSED.add("profile")
+        session = _Session("signed-in", [_response(200, "{}")])
+
+        im.instagram_wrap_request(session.request, session)("POST", WEB_APP_URL, data={"doc_id": "profile"})
+
+        assert session.sent == ["profile"]
+
+    # Instagram refuses signed-in sessions only, so an anonymous one neither sets nor obeys the stop
+    def test_an_anonymous_session_keeps_the_query(self, wrapper):
+        session = _Session("", [_response(400, REFUSED_BODY), _response(200, "{}")])
+        wrapped = im.instagram_wrap_request(session.request, session)
+
+        wrapped("GET", GRAPHQL_URL, params={"query_hash": "followers"})
+        wrapped("GET", GRAPHQL_URL, params={"query_hash": "followers"})
+
+        assert session.sent == ["followers", "followers"]
+        assert im.GRAPHQL_QUERIES_REFUSED == set()
+
+    # Instaloader replaces a session's request with a partial, so the stop is checked on the sessions it builds
+    def test_the_stop_works_on_instaloader_sessions(self, monkeypatch):
+        sent = []
+
+        # Refuses the followers query, answers any other and records the query hash
+        def send(self, request, **kwargs):
+            query_hash = parse_qs(urlsplit(request.url).query)["query_hash"][0]
+            sent.append(query_hash)
+            response = requests.Response()
+            response.status_code, response._content = (400, REFUSED_BODY.encode()) if query_hash == "followers" else (200, b'{"status": "ok"}')
+            response.headers["Content-Type"] = "application/json"
+            response.raw = io.BytesIO(response._content)
+            response.encoding = "utf-8"
+            response.request = request
+            response.url = request.url
+            return response
+
+        monkeypatch.setattr(HTTPAdapter, "send", send)
+        monkeypatch.setattr(im._CurlCffiHTTPAdapter, "send", send)
+        monkeypatch.setattr(im, "SKIP_WRAP_MESSAGES", True)
+        bot = im.instaloader_client(user_agent="Mozilla/5.0", max_connection_attempts=1, sleep=False, quiet=True)
+        bot.context._session.cookies.set("sessionid", "signed-in", domain=".instagram.com")
+        errors = []
+
+        for _ in range(2):
+            with pytest.raises(instaloader.exceptions.AbortDownloadException) as error:
+                bot.context.graphql_query("followers", {"id": "12"})
+            errors.append(str(error.value))
+        assert bot.context.graphql_query("comments", {"shortcode": "abc"}) == {"status": "ok"}
+
+        assert sent == ["followers", "comments"]
+        assert "feedback_required" in errors[0]
+        assert errors[1] == im.GRAPHQL_QUERY_REFUSED_ERROR
