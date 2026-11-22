@@ -60,7 +60,7 @@ class TestProfilePictureWorkflows:
         logs = []
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"initial", saved_at) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"initial", saved_at))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), "", str(csv_path), 60, False, 1)
 
@@ -93,7 +93,7 @@ class TestProfilePictureWorkflows:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(profile_pic_tmp), str(profile_pic_old), "", str(csv_path), 60, True, 1)
 
@@ -129,7 +129,7 @@ class TestProfilePictureWorkflows:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"empty-template", 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"empty-template", 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(profile_pic_tmp), str(profile_pic_old), str(empty_template), str(csv_path), 60, False, 1)
 
@@ -163,7 +163,7 @@ class TestProfilePictureWorkflows:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(profile_pic_tmp), str(profile_pic_old), str(empty_template), str(csv_path), 60, False, 1)
 
@@ -189,7 +189,7 @@ class TestProfilePictureWorkflows:
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
         monkeypatch.setattr(im_module, "send_notification_channels", lambda *args, **kwargs: alerts.append(args))
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(100, 100, b"picture"), 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(100, 100, b"picture"), 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/s100x100/profile.jpg", str(profile_pic), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), "", str(artifact_dir / "events.csv"), 60, True, 2)
 
@@ -210,7 +210,7 @@ class TestProfilePictureWorkflows:
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "send_notification_channels", lambda *args, **kwargs: alerts.append(args))
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(100, 100, b"new"), 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(100, 100, b"new"), 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), "", str(artifact_dir / "events.csv"), 60, True, 2)
 
@@ -228,7 +228,7 @@ class TestProfilePictureWorkflows:
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "send_notification_channels", lambda *args, **kwargs: alerts.append(args))
-        monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(224, 224, b"empty"), 1710000000) is None)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), _jpeg(224, 224, b"empty"), 1710000000))
 
         im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), str(empty_template), str(artifact_dir / "events.csv"), 60, True, 2)
 
@@ -246,3 +246,27 @@ class TestProfilePictureWorkflows:
         assert im_module.jpeg_dimensions(str(progressive)) == (150, 120)
         assert im_module.jpeg_dimensions(str(not_jpeg)) is None
         assert im_module.jpeg_dimensions(str(artifact_dir / "missing.jpg")) is None
+
+    # A failed check names why the current picture could not be downloaded and gives no session advice
+    def test_failed_check_names_the_download_failure(self, im_module, monkeypatch, capsys):
+        artifact_dir = _profile_picture_artifact_dir()
+        profile_pic = artifact_dir / "profile.jpg"
+        _write_payload(profile_pic, _jpeg(320, 320, b"picture"), 1700000000)
+        _patch_quiet_output(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: "scontent.cdninstagram.com answered HTTP 403")
+
+        im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(profile_pic), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), "", "", 60, False, 2)
+
+        output = capsys.readouterr().out
+        assert "Error while checking if the profile picture has changed: scontent.cdninstagram.com answered HTTP 403" in output
+        assert "To fix: Open an issue with this output if the failure continues" in output
+
+    # A failed first save names why the picture could not be downloaded
+    def test_failed_first_save_names_the_download_failure(self, im_module, monkeypatch, capsys):
+        artifact_dir = _profile_picture_artifact_dir()
+        _patch_quiet_output(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "download_media", lambda url, file_name, custom_mdate_ts=0: "scontent.cdninstagram.com answered HTTP 403")
+
+        im_module.detect_changed_profile_picture("target", "https://example.com/profile.jpg", str(artifact_dir / "profile.jpg"), str(artifact_dir / "profile.tmp.jpg"), str(artifact_dir / "profile.old.jpg"), "", "", 60, False, 1)
+
+        assert "* Error saving profile picture: scontent.cdninstagram.com answered HTTP 403" in capsys.readouterr().out
