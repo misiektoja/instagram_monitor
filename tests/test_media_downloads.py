@@ -112,6 +112,77 @@ class TestMediaDownloads:
             assert not list(destination.parent.glob(".*.tmp"))
 
 
+class TestMediaDownloadFailureReasons:
+    # A refused download names the host and the HTTP status
+    def test_refused_download_names_the_status(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(im_module.req, "get", lambda *args, **kwargs: FakeMediaResponse(status_code=403))
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            reason = im_module.download_media("https://scontent.cdninstagram.com/photo.jpg?oh=signature", str(Path(directory_name) / "photo.jpg"))
+
+        assert reason == "scontent.cdninstagram.com answered HTTP 403"
+
+    # A reply that is not media names its content type
+    def test_non_media_reply_names_its_content_type(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        payload = b"<html>checkpoint</html>"
+        monkeypatch.setattr(im_module.req, "get", lambda *args, **kwargs: FakeMediaResponse(headers={"content-type": "text/html"}, chunks=[payload]))
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            reason = im_module.download_media("https://cdninstagram.com/photo.jpg", str(Path(directory_name) / "photo.jpg"))
+
+        assert reason == "the reply is not an image or video (content type text/html)"
+
+    # A short body names how much arrived
+    def test_truncated_download_names_the_byte_counts(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        payload = b"\xff\xd8\xff\xe0truncated"
+        monkeypatch.setattr(im_module.req, "get", lambda *args, **kwargs: FakeMediaResponse(headers={"content-type": "image/jpeg", "content-length": str(len(payload) + 10)}, chunks=[payload]))
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            reason = im_module.download_media("https://cdninstagram.com/photo.jpg", str(Path(directory_name) / "photo.jpg"))
+
+        assert reason == f"the download stopped after {len(payload)} of {len(payload) + 10} bytes"
+
+    # A file another process holds, as on Windows, is reported with the operating system error
+    def test_locked_destination_names_the_file_error(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        payload = b"\xff\xd8\xff\xe0" + b"image-data" + b"\xff\xd9"
+
+        # Fails the final rename the way Windows does while another process has the file open
+        def locked_replace(source, destination):
+            raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+
+        monkeypatch.setattr(im_module.req, "get", lambda *args, **kwargs: FakeMediaResponse(headers={"content-type": "image/jpeg"}, chunks=[payload]))
+        monkeypatch.setattr(im_module.os, "replace", locked_replace)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            destination = Path(directory_name) / "photo.jpg"
+            reason = im_module.download_media("https://cdninstagram.com/photo.jpg", str(destination))
+            leftovers = list(destination.parent.glob(".*.tmp"))
+
+        assert reason == "PermissionError: [Errno 32] The process cannot access the file because it is being used by another process"
+        assert leftovers == []
+
+    # A connection error drops the signed query string the CDN URL carries
+    def test_connection_error_omits_the_signed_query(self, im_module, monkeypatch):
+        url = "https://scontent.cdninstagram.com/v/photo.jpg?stp=dst-jpg&oh=00_signature&oe=6B037E49"
+
+        # Raises the error requests gives when the server cannot be reached
+        def unreachable(*args, **kwargs):
+            raise im_module.req.exceptions.ConnectionError("HTTPSConnectionPool(host='scontent.cdninstagram.com', port=443): Max retries exceeded with url: /v/photo.jpg?stp=dst-jpg&oh=00_signature&oe=6B037E49")
+
+        monkeypatch.setattr(im_module.req, "get", unreachable)
+        reason = im_module.download_media(url, str(ARTIFACT_ROOT / "unused.jpg"))
+
+        assert reason == "ConnectionError: HTTPSConnectionPool(host='scontent.cdninstagram.com', port=443): Max retries exceeded with url: /v/photo.jpg"
+
+    # Debug mode prints why a media download failed
+    def test_debug_mode_prints_the_failure_reason(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "DEBUG_MODE", True)
+        monkeypatch.setattr(im_module.req, "get", lambda *args, **kwargs: FakeMediaResponse(status_code=429))
+
+        assert im_module.save_pic_video("https://scontent.cdninstagram.com/photo.jpg", str(ARTIFACT_ROOT / "unused.jpg")) is False
+        assert "scontent.cdninstagram.com answered HTTP 429" in capsys.readouterr().out
+
+
 class TestShortcodePathSafety:
     # A shortcode from the API reaches a filename, so anything outside its real alphabet is dropped
     @pytest.mark.parametrize("hostile,expected", [
