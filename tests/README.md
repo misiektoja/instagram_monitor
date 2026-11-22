@@ -54,9 +54,9 @@ installed copy of the package.
 | `test_public_embed_fallback.py` | Anonymous HTTP 400 and 404 recovery through the public embed with page details, page-only private accounts, missing accounts, an unknown post count, remembered fallback, page back-off, collab posts, proxy/TLS settings, failure advice and last-known metadata comparisons |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
-| `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |
+| `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows, file moves and the named cause of a failed download |
 | `test_story_workflows.py` | Startup story item CSV and dashboard metadata plus independent email/webhook gates and hostile story content |
-| `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses and download limits |
+| `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses, download limits and the reported failure cause |
 | `test_request_scoping.py` | Instagram hostname classification, per-session jitter isolation and Instaloader copied sessions |
 | `test_anonymous_session_proxy.py` | Instaloader's own page, raw download and HEAD sessions using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport |
 | `test_signed_in_session_proxy.py` | Sessions loaded from a file or created by login and two-factor login using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport, and the two-request account recovery check |
@@ -70,7 +70,7 @@ installed copy of the package.
 | `test_config_loading.py` | Config files read as data, rejected content and the settings each released template still carries |
 | `test_config_effects.py` | Config-file settings reaching the code that consumes them |
 | `test_startup_summary.py` | The startup summary block driven through the real command-line path |
-| `test_help_screen.py` | The `--help` screen: the shared argument group names, the task-grouped examples and the startup banner |
+| `test_help_screen.py` | The `--help` screen: the shared argument group names, the task-grouped examples, the startup banner and the formatter Python 3.15 passes to it |
 | `test_setup_wizard.py` | The staged setup wizard, its destination checks and its safety gates |
 | `test_install_method_commands.py` | Install-method detection and the command examples it drives |
 | `test_doctor.py` | `--doctor` preflight checks: every section, the delivery tests and the exit code |
@@ -94,7 +94,7 @@ installed copy of the package.
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
-| `test_packaging.py` | Wheel contents, an install that consults no package index, installed console help/version and config generation |
+| `test_packaging.py` | Wheel contents, an install that consults no package index, installed console help/version, config generation and CI coverage of every declared Python version |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation, target creation and HTTPS proxy certificate checks against local servers |
 | `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
