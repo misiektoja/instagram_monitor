@@ -2,6 +2,15 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.2.1 (TBD)
+
+Version **4.2.1** adds official support for **Python 3.15**. A failed profile picture check now says why the picture could not be downloaded.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Python 3.15 support** - Instagram Monitor is now tested on **Python 3.15** on Linux and Windows and PyPI lists it as a supported version. Python 3.10 is still the minimum
+- **IMPROVE:** **Profile picture errors name the cause** - `Error while checking if the profile picture has changed` gave no reason, even with `--debug`. It now names the cause, such as the **HTTP status** from Instagram's image server or a **file error**. `--debug` also prints the cause of a failed post, reel or story download
+
 # Changes in 4.2 (18 Nov 2026)
 
 Version **4.2** fixes signed-in monitoring, session import and **Be Human** mode after Instagram stopped answering most queries on its older GraphQL endpoint for signed-in sessions. It also fixes **no-login monitoring** after Instagram removed the anonymous profile lookup. It requires **Instaloader 4.16** or later.
