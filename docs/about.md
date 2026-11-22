@@ -1,3 +1,7 @@
+---
+description: "Project information for instagram_monitor: change log, contributing, security policy, maintainers, license and support."
+---
+
 # About
 
 Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.

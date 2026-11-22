@@ -1,3 +1,7 @@
+---
+description: "How to run instagram_monitor: monitoring mode, containers, email and webhook notifications, follower churn detection, proxies and CSV export."
+---
+
 # Usage
 
 Setting flags in these examples apply to that run. Repeat them on later runs or [save the corresponding settings](configuration.md#configuration-file).

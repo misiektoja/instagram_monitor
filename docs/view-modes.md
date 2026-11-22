@@ -1,3 +1,7 @@
+---
+description: "Compare the three instagram_monitor views: traditional text output, the terminal dashboard and the web dashboard."
+---
+
 # View Modes
 
 Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). Keep all targets and options after the prefix.

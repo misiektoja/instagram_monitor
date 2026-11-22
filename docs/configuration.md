@@ -1,3 +1,7 @@
+---
+description: "Reference for the instagram_monitor configuration file: targets, login and no-login modes, time zone, SMTP, webhooks, secrets and TLS verification."
+---
+
 # Configuration
 
 Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). Keep all options after the prefix. A container can see host files only through its mounts, so paths to files in the current directory must start with `/data`.

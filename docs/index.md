@@ -1,3 +1,8 @@
+---
+title: "Instagram activity tracker and OSINT monitoring tool"
+description: "Track Instagram users in real time: follower changes, posts, reels, stories and bio updates, with terminal and web dashboards and email or webhook alerts."
+---
+
 # instagram_monitor
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/instagram_monitor/releases)

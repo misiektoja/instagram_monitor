@@ -1,3 +1,7 @@
+---
+description: "Run the instagram_monitor setup wizard to choose targets, an Instagram login, the interface and alerts, then start the first monitoring run."
+---
+
 # Setup & First Run
 
 <a id="run-the-setup-wizard"></a>

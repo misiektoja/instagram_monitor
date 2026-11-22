@@ -1,3 +1,7 @@
+---
+description: "Install instagram_monitor from PyPI, as a Docker image or with Docker Compose. Covers requirements, a Python walkthrough for beginners and upgrading."
+---
+
 # Installation
 
 Choose one installation method. You do not need both Python and Docker.

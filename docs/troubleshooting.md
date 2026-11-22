@@ -1,3 +1,7 @@
+---
+description: "Fixes for common instagram_monitor problems: connection errors, rate limits, dashboard access, follower list failures and installation issues."
+---
+
 # Troubleshooting
 
 Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). The setup wizard and `--help` also print commands for the detected installation.

@@ -1,3 +1,7 @@
+---
+description: "How to run the instagram_monitor pytest suite, the supply chain checks and the browser end-to-end tests."
+---
+
 # Testing
 
 The [tests directory](https://github.com/misiektoja/instagram_monitor/tree/main/tests/) contains a [pytest](https://docs.pytest.org/) suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. It also builds the wheel, installs its console command and verifies documentation contracts. The tests do not contact Instagram. Network functions are replaced with local test doubles. A test fails when it sends a `requests` or `curl_cffi` request to a host other than the local machine.

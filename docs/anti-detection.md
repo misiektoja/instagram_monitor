@@ -1,3 +1,7 @@
+---
+description: "Practices that lower the risk of Instagram challenges and account suspension: browser cookies, user agent, human mode, identity budget and polling settings."
+---
+
 # How to Prevent Getting Challenged and Account Suspension
 
 As mentioned earlier it is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually.
