@@ -49,7 +49,7 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 <a id="new-to-python-check-and-install"></a>
 ## New to Python: check and install
 
-Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.10 or newer and is currently tested through Python 3.14.
+Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.10 or newer and is currently tested through Python 3.15.
 
 ### Check whether Instagram Monitor is already installed
 
@@ -100,11 +100,11 @@ If both commands work and Python reports version 3.10 or newer, skip to [Install
 
 If either command fails:
 
-1. Open the official [Python downloads for macOS](https://www.python.org/downloads/macos/). Select the latest stable Python 3.14 release then download its **macOS 64-bit universal2 installer**. This single installer supports Apple Silicon and Intel Macs.
+1. Open the official [Python downloads for macOS](https://www.python.org/downloads/macos/). Select the latest stable Python 3.15 release then download its **macOS 64-bit universal2 installer**. This single installer supports Apple Silicon and Intel Macs.
 
 2. Open the downloaded `.pkg` file. Keep the standard options, select **Continue** through the installer then enter your macOS password when requested.
 
-3. Open the new **Python 3.14** folder in Applications then double-click **Install Certificates.command**. Wait until its Terminal window reports `update complete` then close that window.
+3. Open the new **Python 3.15** folder in Applications then double-click **Install Certificates.command**. Wait until its Terminal window reports `update complete` then close that window.
 
 4. Close Terminal then open it again.
 
