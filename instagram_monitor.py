@@ -8183,26 +8183,31 @@ def is_valid_downloaded_media(filename, content_type):
     return False
 
 
-# Downloads validated media to a bounded temporary file then atomically replaces the destination
-def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
+# Downloads validated media to a bounded temporary file then atomically replaces the destination.
+# Returns None on success or the reason the download failed
+def download_media(image_video_url, image_video_file_name, custom_mdate_ts=0) -> Optional[str]:
     temporary_path = None
     image_video_response = None
     expected_bytes = None
+    url_parts = urlsplit(str(image_video_url))
     try:
         # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
         # codeql[py/request-without-cert-validation]
         image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
         if image_video_response.status_code != 200:
-            return False
+            return f"{url_parts.hostname or 'the server'} answered HTTP {image_video_response.status_code}"
+        too_large = f"the file is larger than {MEDIA_DOWNLOAD_MAX_BYTES // (1024 * 1024)} MiB"
         content_length = image_video_response.headers.get('content-length')
         if content_length:
             try:
                 expected_bytes = int(content_length)
-                if expected_bytes < 0 or expected_bytes > MEDIA_DOWNLOAD_MAX_BYTES:
-                    return False
             except (TypeError, ValueError):
-                return False
+                expected_bytes = -1
+            if expected_bytes < 0:
+                return f"the reply has an invalid content length ({content_length})"
+            if expected_bytes > MEDIA_DOWNLOAD_MAX_BYTES:
+                return too_large
         url_time = image_video_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
         if url_time and not custom_mdate_ts:
@@ -8223,24 +8228,27 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
                     continue
                 downloaded_bytes += len(chunk)
                 if downloaded_bytes > MEDIA_DOWNLOAD_MAX_BYTES:
-                    return False
+                    return too_large
                 handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())
         content_encoding = str(image_video_response.headers.get('content-encoding') or '').strip().lower()
         if expected_bytes is not None and content_encoding in ('', 'identity') and downloaded_bytes != expected_bytes:
-            return False
-        if not is_valid_downloaded_media(temporary_path, image_video_response.headers.get('content-type')):
-            return False
+            return f"the download stopped after {downloaded_bytes} of {expected_bytes} bytes"
+        content_type = image_video_response.headers.get('content-type')
+        if not is_valid_downloaded_media(temporary_path, content_type):
+            return f"the reply is not an image or video (content type {content_type or 'missing'})"
         os.replace(temporary_path, destination)
         temporary_path = None
         if url_time_in_tz_ts and not custom_mdate_ts:
             os.utime(destination, (url_time_in_tz_ts, url_time_in_tz_ts))
         elif custom_mdate_ts:
             os.utime(destination, (custom_mdate_ts, custom_mdate_ts))
-        return True
-    except Exception:
-        return False
+        return None
+    except Exception as error:
+        # A requests error quotes the URL path and the CDN's signed query, which is long and of no use to the reader
+        reason = format_error_message(error)
+        return reason.replace(f"?{url_parts.query}", "") if url_parts.query else reason
     finally:
         if image_video_response is not None:
             try:
@@ -8252,6 +8260,14 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
                 os.remove(temporary_path)
             except OSError:
                 pass
+
+
+# Downloads validated media and reports whether it was saved, printing the failure reason in debug mode
+def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0) -> bool:
+    reason = download_media(image_video_url, image_video_file_name, custom_mdate_ts)
+    if reason is not None:
+        debug_print("Media download", file=os.path.basename(str(image_video_file_name)), outcome="failed", error=reason)
+    return reason is None
 
 
 # Displays one saved image in the terminal through the configured imgcat binary, with optional spacing around it
@@ -8334,7 +8350,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 
     # Profile pic does not exist in the filesystem
     if not os.path.isfile(profile_pic_file):
-        if save_pic_video(profile_image_url, profile_pic_file):
+        download_error = download_media(profile_image_url, profile_pic_file)
+        if download_error is None:
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
 
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
@@ -8366,7 +8383,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             except Exception as e:
                 print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
         else:
-            print(f"* Error saving profile picture !{new_line}")
+            print(f"* Error saving profile picture: {download_error}{new_line}")
 
         if func_ver == 2:
             print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
@@ -8383,7 +8400,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         m_body_html_pic_saved_text = ""
         profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
         profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
-        if save_pic_video(profile_image_url, profile_pic_file_tmp):
+        download_error = download_media(profile_image_url, profile_pic_file_tmp)
+        if download_error is None:
             profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), local_timezone())
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 debug_print("Comparing current profile picture with empty template...")
@@ -8506,7 +8524,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     except Exception:
                         pass
         else:
-            print_recovery_error("Error while checking if the profile picture has changed !")
+            # Not classified by its text, since a CDN status or file error says nothing about the session or the IP
+            print_recovery_advice(make_recovery_advice("unknown", f"Error while checking if the profile picture has changed: {download_error}", "Open an issue with this output if the failure continues", True))
             if func_ver == 2:
                 print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
