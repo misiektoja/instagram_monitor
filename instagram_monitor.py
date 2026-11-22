@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.2
+v4.2.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -23,7 +23,7 @@ rich (optional - for terminal dashboard)
 # Defers annotation evaluation, since typing names are imported below the first annotated definition
 from __future__ import annotations
 
-VERSION = "4.2"
+VERSION = "4.2.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
