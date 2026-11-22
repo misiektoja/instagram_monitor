@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -239,6 +240,15 @@ def test_the_minimum_python_version_is_declared_once(im_module):
     assert f"Programming Language :: Python :: {im_module.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
     classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
     assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == im_module.MINIMUM_PYTHON_VERSION
+
+
+# Verifies CI tests every Python version the package declares
+def test_ci_covers_every_declared_python_version():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8"))
+
+    declared = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    assert set(workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"]) == set(declared)
 
 
 # Verifies published rebuilds refresh package updates even when the source is unchanged
