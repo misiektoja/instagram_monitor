@@ -800,7 +800,7 @@ The directory layout depends on the number of targets:
 
 Summary messages and errors that apply to the whole process are written to every active target log.
 
-Media downloads are limited to 100 MiB. Failed or invalid downloads leave any previously saved file intact.
+Media downloads are limited to 100 MiB. Failed or invalid downloads leave any previously saved file intact. A failed profile picture download names its cause, such as the HTTP status or a file error. `--debug` prints the cause for other media downloads.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures
